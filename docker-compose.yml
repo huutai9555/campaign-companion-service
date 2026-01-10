@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: campaign-companion-postgres
+    environment:
+      - POSTGRES_USER=nestjs
+      - POSTGRES_PASSWORD=secret123
+      - POSTGRES_DB=nestjs_db
+    ports:
+      - "5433:5432"  # Đổi port host thành 5433
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nestjs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: campaign-companion-redis
+    ports:
+      - "6380:6379"  # Đổi port host thành 6380
+    volumes:
+      - redis_data:/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # NestJS Backend
+  backend:
+    build: .
+    container_name: campaign-companion-service
+    ports:
+      - "4000:4000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432  # Port internal trong Docker network
+      - DATABASE_USER=nestjs
+      - DATABASE_PASSWORD=secret123
+      - DATABASE_NAME=nestjs_db
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379  # Port internal trong Docker network
+      # Encryption (32 bytes = 64 hex characters)
+      - ENCRYPTION_KEY=97b412fc6b6069a112852a12dea607d5a8e802b16b282a2e5a47ad4d7554409a
+      - CLERK_PUBLISHABLE_KEY=pk_test_bW9kZXJuLXN0dWQtMzYuY2xlcmsuYWNjb3VudHMuZGV2JA
+      - CLERK_SECRET_KEY=sk_test_qCprs79zkJP5uBIYpVOSugX2zdszRySA1bzIGYi5lI
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge

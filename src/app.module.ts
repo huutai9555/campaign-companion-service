@@ -14,16 +14,19 @@ import { EmailImportSessionsModule } from './modules/email-import-sessions/email
 
 @Module({
   imports: [
-    BullModule.forRoot({
-      connection: {
-        host: 'localhost',
-        port: 6379,
-      },
-    }),
     ConfigModule.forRoot({
       isGlobal: true,
       load: [databaseConfig],
       envFilePath: '.env',
+    }),
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        connection: {
+          host: configService.get<string>('REDIS_HOST') || 'localhost',
+          port: configService.get<number>('REDIS_PORT') || 6379,
+        },
+      }),
     }),
     // forRootAsync (lấy cấu env file) forRoot không thể truy cập env
     TypeOrmModule.forRootAsync({
