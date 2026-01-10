@@ -47,9 +47,9 @@ services:
       - NODE_ENV=production
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432  # Port internal trong Docker network
-      - DATABASE_USER=nestjs
+      - DATABASE_USER=postgres
       - DATABASE_PASSWORD=secret123
-      - DATABASE_NAME=nestjs_db
+      - DATABASE_NAME=campaign_companion_service
       - REDIS_HOST=redis
       - REDIS_PORT=6379  # Port internal trong Docker network
       # Encryption (32 bytes = 64 hex characters)
