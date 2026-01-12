@@ -3,8 +3,6 @@ import {
   IsNotEmpty,
   IsEnum,
   IsArray,
-  IsInt,
-  Min,
   IsOptional,
   IsDateString,
   ArrayMinSize,
@@ -44,19 +42,4 @@ export class CreateCampaignDto {
   @IsDateString()
   @IsOptional()
   scheduledAt?: string;
-
-  @IsInt()
-  @Min(0)
-  @IsOptional()
-  delayBetweenEmails?: number;
-
-  @IsInt()
-  @Min(0)
-  @IsOptional()
-  maxRetries?: number;
-
-  @IsInt()
-  @Min(0)
-  @IsOptional()
-  retryDelay?: number;
 }

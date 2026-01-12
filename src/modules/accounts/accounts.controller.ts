@@ -16,6 +16,7 @@ import { AccountsService } from './accounts.service';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
 import { GetUser } from 'src/decorators/get-user.decorator';
+import { PaginateDto } from 'src/shared/dto/paginate.dto';
 
 @Controller('accounts')
 @UseInterceptors(ClassSerializerInterceptor)
@@ -33,8 +34,9 @@ export class AccountsController {
   }
 
   @Get()
-  async findAll(@GetUser() user: any) {
-    const accounts = await this.accountsService.findAll(user.id);
+  async findAll(@Query() params: PaginateDto, @GetUser() user: any) {
+    console.log('params: ', params);
+    const accounts = await this.accountsService.findAll(user.id, params);
     return accounts;
   }
 
@@ -53,6 +55,7 @@ export class AccountsController {
 
   @Get(':id')
   async findOne(@Param('id') id: string, @GetUser() user: any) {
+    console.log('id: ', id);
     const account = await this.accountsService.findOne(id, user);
     return account;
   }

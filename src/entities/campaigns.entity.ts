@@ -57,16 +57,6 @@ export class Campaign extends BaseEntity {
   @Column({ type: 'timestamp', nullable: true, name: 'scheduled_at' })
   scheduledAt: Date;
 
-  // === CÀI ĐẶT GỬI ===
-  @Column({ name: 'delay_between_emails', type: 'int', default: 10 })
-  delayBetweenEmails: number;
-
-  @Column({ name: 'max_retries', type: 'int', default: 3 })
-  maxRetries: number;
-
-  @Column({ name: 'retry_delay', type: 'int', default: 0 })
-  retryDelay: number;
-
   // === TRẠNG THÁI ===
   @Column({
     type: 'enum',

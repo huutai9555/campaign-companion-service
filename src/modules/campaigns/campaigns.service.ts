@@ -79,9 +79,6 @@ export class CampaignsService {
         : null,
       emailImportSession,
       emailImportSessionId: emailImportSession.id,
-      delayBetweenEmails: createCampaignDto.delayBetweenEmails ?? 10,
-      maxRetries: createCampaignDto.maxRetries ?? 3,
-      retryDelay: createCampaignDto.retryDelay ?? 0,
       status: CampaignStatus.DRAFT,
       accounts,
       totalRecipients: recipientCount,
@@ -201,12 +198,6 @@ export class CampaignsService {
       campaign.sendType = updateCampaignDto.sendType;
     if (updateCampaignDto.scheduledAt)
       campaign.scheduledAt = new Date(updateCampaignDto.scheduledAt);
-    if (updateCampaignDto.delayBetweenEmails !== undefined)
-      campaign.delayBetweenEmails = updateCampaignDto.delayBetweenEmails;
-    if (updateCampaignDto.maxRetries !== undefined)
-      campaign.maxRetries = updateCampaignDto.maxRetries;
-    if (updateCampaignDto.retryDelay !== undefined)
-      campaign.retryDelay = updateCampaignDto.retryDelay;
     if (updateCampaignDto.status) campaign.status = updateCampaignDto.status;
 
     // Update accounts if provided
@@ -270,16 +261,16 @@ export class CampaignsService {
     );
 
     // Schedule repeatable job to run daily at 01:00 UTC (08:00 Vietnam time)
-    await this.campaignEmailQueue.add(
-      CAMPAIGN_EMAIL_SENDING,
-      { campaignId: id },
-      {
-        repeat: {
-          pattern: '0 1 * * *', // Cron: every day at 01:00 UTC
-        },
-        jobId: `campaign-${id}`, // Unique job ID to prevent duplicates
-      },
-    );
+    // await this.campaignEmailQueue.add(
+    //   CAMPAIGN_EMAIL_SENDING,
+    //   { campaignId: id },
+    //   {
+    //     repeat: {
+    //       pattern: '0 1 * * *', // Cron: every day at 01:00 UTC
+    //     },
+    //     jobId: `campaign-${id}`, // Unique job ID to prevent duplicates
+    //   },
+    // );
 
     return this.campaignRepository.save(campaign);
   }

@@ -5,10 +5,7 @@ import { Campaign } from './campaigns.entity';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
 export enum EmailServiceProvider {
-  BREVO = 'brevo',
-  SENDGRID = 'sendgrid',
-  MAILGUN = 'mailgun',
-  AWS_SES = 'aws_ses',
+  SMTP = 'smtp',
 }
 
 export enum AccountStatus {
@@ -18,32 +15,12 @@ export enum AccountStatus {
 }
 
 // Type definitions cho credentials của từng provider
-export interface BrevoCredentials {
-  api_key: string;
+export interface SmtpCredentials {
+  user: string;
+  password: string;
 }
 
-export interface SendGridCredentials {
-  api_key: string;
-}
-
-export interface MailgunCredentials {
-  api_key: string;
-  domain: string;
-  region?: 'us' | 'eu';
-}
-
-export interface AwsSesCredentials {
-  access_key_id: string;
-  secret_access_key: string;
-  region: string;
-  from_email?: string;
-}
-
-export type EmailCredentials =
-  | BrevoCredentials
-  | SendGridCredentials
-  | MailgunCredentials
-  | AwsSesCredentials;
+export type EmailCredentials = SmtpCredentials;
 
 @Entity('accounts')
 export class Account extends BaseEntity {
@@ -75,8 +52,14 @@ export class Account extends BaseEntity {
   @Column({ name: 'sent_today', type: 'int', default: 0 })
   sentToday: number;
 
-  @Column({ name: 'last_reset_date', type: 'date', nullable: true })
+  @Column({ name: 'sent_this_hour', type: 'int', default: 0 })
+  sentThisHour: number;
+
+  @Column({ name: 'last_reset_date', type: 'timestamp', nullable: true })
   lastResetDate: Date;
+
+  @Column({ name: 'hour_started_at', type: 'timestamp', nullable: true })
+  hourStartedAt: Date;
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
@@ -157,14 +140,8 @@ export class Account extends BaseEntity {
 
     // Runtime validation based on provider
     switch (this.provider) {
-      case EmailServiceProvider.BREVO:
-        return credentials as BrevoCredentials;
-      case EmailServiceProvider.SENDGRID:
-        return credentials as SendGridCredentials;
-      case EmailServiceProvider.MAILGUN:
-        return credentials as MailgunCredentials;
-      case EmailServiceProvider.AWS_SES:
-        return credentials as AwsSesCredentials;
+      case EmailServiceProvider.SMTP:
+        return credentials as SmtpCredentials;
       default:
         throw new Error(`Unknown provider: ${this.provider}`);
     }

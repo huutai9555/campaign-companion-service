@@ -14,6 +14,9 @@ import { UpdateAccountDto } from './dto/update-account.dto';
 // import { Cache } from 'cache-manager';
 import Redis from 'ioredis';
 import { EmailProvidersService } from 'src/providers/email-providers.service';
+import { PaginateDto } from 'src/shared/dto/paginate.dto';
+import { QueryBuilder } from 'src/helpers/query-builder';
+import { paginate, Pagination } from 'nestjs-typeorm-paginate';
 
 @Injectable()
 export class AccountsService {
@@ -52,7 +55,6 @@ export class AccountsService {
       name: createAccountDto.name,
       email: createAccountDto.email,
       provider: createAccountDto.provider,
-      dailyLimit: createAccountDto.dailyLimit || 300,
       isActive: createAccountDto.isActive ?? true,
       status: createAccountDto.status ?? AccountStatus.ACTIVE,
     });
@@ -62,14 +64,32 @@ export class AccountsService {
     return this.accountRepository.save(account);
   }
 
-  async findAll(clerkUserId: string): Promise<Account[]> {
+  async findAll(
+    clerkUserId: string,
+    params: PaginateDto,
+  ): Promise<Account[] | Pagination<Account>> {
+    const { filter, page, size, sort } = params;
+    const queryBuilder = new QueryBuilder();
+
     const query = this.accountRepository.createQueryBuilder('account');
 
     if (clerkUserId) {
       query.where('account.clerkUserId = :clerkUserId', { clerkUserId });
     }
 
-    return query.orderBy('account.createdAt', 'DESC').getMany();
+    if (filter) {
+      query.where(queryBuilder.whereBuilder(JSON.parse(filter), 'account'));
+    }
+
+    if (sort) {
+      queryBuilder.buildOrderBy(query, JSON.parse(sort), 'account');
+    }
+
+    if (size) {
+      return paginate(query, { page, limit: size });
+    }
+
+    return await query.getMany();
   }
 
   async findOne(id: string, user: any): Promise<Account> {
@@ -101,12 +121,8 @@ export class AccountsService {
     // Update basic fields
     if (updateAccountDto.name) account.name = updateAccountDto.name;
     if (updateAccountDto.email) account.email = updateAccountDto.email;
-    if (updateAccountDto.dailyLimit)
-      account.dailyLimit = updateAccountDto.dailyLimit;
     if (updateAccountDto.sentToday !== undefined)
       account.sentToday = updateAccountDto.sentToday;
-    if (updateAccountDto.lastResetDate)
-      account.lastResetDate = updateAccountDto.lastResetDate;
     if (updateAccountDto.isActive !== undefined)
       account.isActive = updateAccountDto.isActive;
     if (updateAccountDto.status) account.status = updateAccountDto.status;

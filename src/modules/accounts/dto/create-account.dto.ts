@@ -2,8 +2,6 @@ import {
   IsString,
   IsEnum,
   IsNotEmpty,
-  IsInt,
-  Min,
   IsOptional,
   IsEmail,
 } from 'class-validator';
@@ -28,11 +26,6 @@ export class CreateAccountDto {
 
   @IsNotEmpty()
   credentials: EmailCredentials;
-
-  @IsInt()
-  @Min(1)
-  @IsOptional()
-  dailyLimit?: number;
 
   @IsOptional()
   isActive?: boolean;

@@ -6,9 +6,6 @@ export class CampaignResponseDto {
   name: string;
   sendType: SendType;
   scheduledAt: Date | null;
-  delayBetweenEmails: number;
-  maxRetries: number;
-  retryDelay: number;
   status: CampaignStatus;
   totalRecipients: number;
   totalSent: number;

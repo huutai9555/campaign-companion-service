@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   postgres:
@@ -10,13 +8,13 @@ services:
       - POSTGRES_PASSWORD=secret123
       - POSTGRES_DB=campaign_companion_service
     ports:
-      - "5433:5432"  # Đổi port host thành 5433
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - app-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nestjs"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]  # ← FIX: Đổi thành postgres
       interval: 10s
       timeout: 5s
       retries: 5
@@ -26,7 +24,7 @@ services:
     image: redis:7-alpine
     container_name: campaign-companion-redis
     ports:
-      - "6380:6379"  # Đổi port host thành 6380
+      - "6380:6379"
     volumes:
       - redis_data:/data
     networks:
@@ -45,14 +43,14 @@ services:
       - "4000:4000"
     environment:
       - NODE_ENV=production
+      - PORT=4000
       - DATABASE_HOST=postgres
-      - DATABASE_PORT=5432  # Port internal trong Docker network
+      - DATABASE_PORT=5432
       - DATABASE_USER=postgres
       - DATABASE_PASSWORD=secret123
       - DATABASE_NAME=campaign_companion_service
       - REDIS_HOST=redis
-      - REDIS_PORT=6379  # Port internal trong Docker network
-      # Encryption (32 bytes = 64 hex characters)
+      - REDIS_PORT=6379
       - ENCRYPTION_KEY=97b412fc6b6069a112852a12dea607d5a8e802b16b282a2e5a47ad4d7554409a
       - CLERK_PUBLISHABLE_KEY=pk_test_bW9kZXJuLXN0dWQtMzYuY2xlcmsuYWNjb3VudHMuZGV2JA
       - CLERK_SECRET_KEY=sk_test_qCprs79zkJP5uBIYpVOSugX2zdszRySA1bzIGYi5lI

@@ -1,6 +1,7 @@
 import { PartialType } from '@nestjs/mapped-types';
 import { CreateAccountDto } from './create-account.dto';
-import { IsInt, Min, IsOptional } from 'class-validator';
+import { IsInt, Min, IsOptional, IsNotEmpty } from 'class-validator';
+import { EmailCredentials } from 'src/entities/accounts.entity';
 
 export class UpdateAccountDto extends PartialType(CreateAccountDto) {
   @IsInt()
@@ -8,6 +9,6 @@ export class UpdateAccountDto extends PartialType(CreateAccountDto) {
   @IsOptional()
   sentToday?: number;
 
-  @IsOptional()
-  lastResetDate?: Date;
+  @IsNotEmpty()
+  credentials: EmailCredentials;
 }
