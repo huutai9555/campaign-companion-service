@@ -15,6 +15,9 @@ export class EmailImportSession extends BaseEntity {
   @Column({ name: 'file_name' })
   fileName: string; // Tên file Excel
 
+  @Column({ name: 'is_used', type: 'boolean', default: false })
+  isUsed: boolean; // Đã được sử dụng trong campaign chưa
+
   @OneToMany(() => EmailRecipient, (recipient) => recipient.emailImportSession)
   recipients: EmailRecipient[];
 

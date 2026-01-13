@@ -7,6 +7,9 @@ import { EXCEL_IMPORT_PROCESSING } from 'src/constant/import-excel-sessions';
 import { Queue } from 'bullmq';
 import { ImportExcelDto } from './dto/import-excel.dto';
 import { EmailRecipient } from 'src/entities/email-recipients.entity';
+import { PaginateDto } from 'src/shared/dto/paginate.dto';
+import { QueryBuilder } from 'src/helpers/query-builder';
+import { paginate, Pagination } from 'nestjs-typeorm-paginate';
 
 @Injectable()
 export class EmailImportSessionsService {
@@ -18,13 +21,27 @@ export class EmailImportSessionsService {
     @InjectQueue(EXCEL_IMPORT_PROCESSING) private importExcelQueue: Queue,
   ) {}
 
-  async findAllByUserId(userId: string): Promise<EmailImportSession[]> {
-    return this.emailImportSessionRepository
+  async findAllByUserId(
+    userId: string,
+    params: PaginateDto,
+  ): Promise<EmailImportSession[] | Pagination<EmailImportSession>> {
+    const { page, filter, size } = params;
+    const queryBuilder = new QueryBuilder();
+
+    const query = await this.emailImportSessionRepository
       .createQueryBuilder('session')
       .loadRelationCountAndMap('session.recipientCount', 'session.recipients')
       .where('session.clerkUserId = :userId', { userId })
-      .orderBy('session.createdAt', 'DESC')
-      .getMany();
+      .orderBy('session.createdAt', 'DESC');
+
+    if (filter) {
+      query.andWhere(queryBuilder.whereBuilder(JSON.parse(filter), 'session'));
+    }
+
+    if (size) {
+      return paginate(query, { page, limit: size });
+    }
+    return await query.getMany();
     // .loadRelationCountAndMap(
     //   'session.pendingCount',
     //   'session.recipients',

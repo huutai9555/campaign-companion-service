@@ -15,6 +15,7 @@ import { Account, AccountStatus } from 'src/entities/accounts.entity';
 import { EmailProvidersService } from 'src/providers/email-providers.service';
 import { EmailImportSession } from 'src/entities/email-import-sessions.entity';
 import { EmailRecipient } from 'src/entities/email-recipients.entity';
+import { EmailTemplate } from 'src/entities/email-templates.entity';
 import { CAMPAIGN_EMAIL_SENDING } from 'src/constant/campaigns';
 
 @Injectable()
@@ -28,6 +29,8 @@ export class CampaignsService {
     private readonly emailImportSession: Repository<EmailImportSession>,
     @InjectRepository(EmailRecipient)
     private readonly emailRecipient: Repository<EmailRecipient>,
+    @InjectRepository(EmailTemplate)
+    private readonly emailTemplateRepository: Repository<EmailTemplate>,
     private readonly emailProvidersService: EmailProvidersService,
     @InjectQueue(CAMPAIGN_EMAIL_SENDING)
     private readonly campaignEmailQueue: Queue,
@@ -89,7 +92,43 @@ export class CampaignsService {
     });
     await this.accountRepository.save(accounts);
 
-    return this.campaignRepository.save(campaign);
+    // Mark email import session as used
+    emailImportSession.isUsed = true;
+    await this.emailImportSession.save(emailImportSession);
+
+    const savedCampaign = await this.campaignRepository.save(campaign);
+
+    // Create templates from variants if provided
+    if (createCampaignDto.templates) {
+      const { subjectVariants, bodyVariants } = createCampaignDto.templates;
+
+      if (subjectVariants?.length > 0 && bodyVariants?.length > 0) {
+        const templates: EmailTemplate[] = [];
+
+        // Create templates by pairing variants (by index or create all combinations)
+        // Here we create templates by matching indices
+        const maxLength = Math.max(subjectVariants.length, bodyVariants.length);
+
+        for (let i = 0; i < maxLength; i++) {
+          const subjectVariant = subjectVariants[i % subjectVariants.length];
+          const bodyVariant = bodyVariants[i % bodyVariants.length];
+
+          const template = this.emailTemplateRepository.create({
+            campaignId: savedCampaign.id,
+            subject: subjectVariant.content,
+            content: bodyVariant.content,
+            versionNumber: i + 1,
+            isActive: i === 0, // First template is active
+          });
+          templates.push(template);
+        }
+
+        await this.emailTemplateRepository.save(templates);
+        savedCampaign.templates = templates;
+      }
+    }
+
+    return savedCampaign;
   }
 
   async findAll(clerkUserId?: string): Promise<Campaign[]> {
@@ -221,6 +260,39 @@ export class CampaignsService {
       }
 
       campaign.accounts = accounts;
+    }
+
+    // Handle templates update/create
+    if (updateCampaignDto.templates) {
+      const { subjectVariants, bodyVariants } = updateCampaignDto.templates;
+
+      if (subjectVariants?.length > 0 && bodyVariants?.length > 0) {
+        // Delete existing templates
+        if (campaign.templates?.length > 0) {
+          await this.emailTemplateRepository.remove(campaign.templates);
+        }
+
+        // Create new templates from variants
+        const templates: EmailTemplate[] = [];
+        const maxLength = Math.max(subjectVariants.length, bodyVariants.length);
+
+        for (let i = 0; i < maxLength; i++) {
+          const subjectVariant = subjectVariants[i % subjectVariants.length];
+          const bodyVariant = bodyVariants[i % bodyVariants.length];
+
+          const template = this.emailTemplateRepository.create({
+            campaignId: campaign.id,
+            subject: subjectVariant.content,
+            content: bodyVariant.content,
+            versionNumber: i + 1,
+            isActive: i === 0,
+          });
+          templates.push(template);
+        }
+
+        await this.emailTemplateRepository.save(templates);
+        campaign.templates = templates;
+      }
     }
 
     return this.campaignRepository.save(campaign);

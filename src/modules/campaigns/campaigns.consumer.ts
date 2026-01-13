@@ -43,6 +43,11 @@ export class CampaignEmailConsumer extends WorkerHost {
       return { error: 'Campaign not found' };
     }
 
+    if (campaign.templates.length <= 0) {
+      this.logger.error(`Campaign ${campaignId} has no templates`);
+      return { error: 'No templates configured for campaign' };
+    }
+
     // Check if campaign should run
     if (campaign.status === 'completed' || campaign.status === 'failed') {
       this.logger.log(`Campaign ${campaignId} is ${campaign.status}, skipping`);
@@ -184,9 +189,54 @@ export class CampaignEmailConsumer extends WorkerHost {
         try {
           await this.emailProvidersService.sendViaSmtp(account, {
             to: recipient.email,
-            subject: 'Kiểm thử tính năng',
+            subject: campaign.templates[0].subject,
             htmlContent: this.replaceVariables(
-              '<h1>Xin chào {{name}}</h1><p>Đây là email kiểm thử, xin lỗi vì sự bất tiện này.</p>',
+              `<!DOCTYPE html>
+          <html>
+          <head>
+              <title>Thông tin Liên hệ</title>
+              <style>
+                  body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                  .container { max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+                  h2 { color: #0056b3; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px; }
+                  .data-item { margin-bottom: 15px; }
+                  .label { font-weight: bold; color: #555; display: inline-block; width: 120px; }
+                  .value { color: #000; }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <h2>Chi tiết Thông tin Khách hàng</h2>
+
+                  <div class="data-item">
+                      <span class="label">Tên:</span>
+                      <span class="value">
+                         ${recipient.name || 'Khách hàng tiềm năng'}
+                      </span>
+                  </div>
+
+                  <div class="data-item">
+                      <span class="label">Loại hình:</span>
+                      <span class="value">
+                         ${recipient.category || 'Chưa xác định'}
+                      </span>
+                  </div>
+
+                  <div class="data-item">
+                      <span class="label">Địa chỉ:</span>
+                      <span class="value">
+                         ${recipient.address || 'Không có địa chỉ'}
+                      </span>
+                  </div>
+                    <div class="data-item">
+                      <span class="label">Ghi chú:</span>
+                      <span class="value">
+                         ${campaign.templates[0].content || 'Cảm ơn vì đã quan tâm đến dịch vụ của chúng tôi.'}
+                      </span>
+                  </div>
+              </div>
+          </body>
+          </html>`,
               recipient,
             ),
           });

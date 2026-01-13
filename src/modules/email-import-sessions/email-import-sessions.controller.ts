@@ -7,10 +7,12 @@ import {
   HttpCode,
   HttpStatus,
   Body,
+  Query,
 } from '@nestjs/common';
 import { EmailImportSessionsService } from './email-import-sessions.service';
 import { ImportExcelDto } from './dto';
 import { GetUser } from 'src/decorators/get-user.decorator';
+import { PaginateDto } from 'src/shared/dto/paginate.dto';
 
 @Controller('email-import-sessions')
 @UseInterceptors(ClassSerializerInterceptor)
@@ -21,8 +23,8 @@ export class EmailImportSessionsController {
 
   @Get()
   @HttpCode(HttpStatus.OK)
-  async findAllByUser(@GetUser() user: any) {
-    return this.emailImportSessionsService.findAllByUserId(user.id);
+  async findAllByUser(@Query() params: PaginateDto, @GetUser() user: any) {
+    return this.emailImportSessionsService.findAllByUserId(user.id, params);
   }
 
   @Post()

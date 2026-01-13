@@ -68,8 +68,8 @@ export class EmailProvidersService {
       port: 587,
       secure: false,
       auth: {
-        user: account.email,
-        pass: 'nwli lzmt irjb tcex',
+        user: credentials.user,
+        pass: credentials.password,
       },
     });
 
