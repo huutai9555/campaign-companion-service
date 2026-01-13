@@ -24,6 +24,21 @@ export class DashboardStatsDto {
   draftCampaigns: number;
 }
 
+// Thống kê email theo ngày (7 ngày gần nhất)
+export class DailyEmailStatsDto {
+  date: string; // YYYY-MM-DD
+  sent: number;
+  failed: number;
+  totalSent: number;
+}
+
+// Thống kê hàng đợi gửi - danh sách accounts đang trong running campaigns
+export class AccountInQueueDto {
+  accountEmail: string;
+  campaignId: string;
+  campaignName: string;
+}
+
 export class CampaignSummaryDto {
   id: string;
   name: string;
@@ -39,4 +54,6 @@ export class CampaignSummaryDto {
 export class DashboardResponseDto {
   stats: DashboardStatsDto;
   recentCampaigns: CampaignSummaryDto[];
+  dailyEmailStats: DailyEmailStatsDto[]; // Thống kê 7 ngày gần nhất
+  accountsInQueue: AccountInQueueDto[]; // Danh sách accounts đang trong running campaigns
 }

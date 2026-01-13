@@ -41,12 +41,12 @@ export class AccountsService {
   }
 
   async create(createAccountDto: CreateAccountDto, user: any): Promise<any> {
-    const existEmail = this.accountRepository.findOne({
+    const existEmail = await this.accountRepository.findOne({
       where: {
         email: createAccountDto.email,
       },
     });
-    if (!existEmail) {
+    if (existEmail) {
       throw new Error('Email is existed');
     }
 
@@ -72,13 +72,13 @@ export class AccountsService {
     const queryBuilder = new QueryBuilder();
 
     const query = this.accountRepository.createQueryBuilder('account');
-
+    // console.log(clerkUserId)
     if (clerkUserId) {
       query.where('account.clerkUserId = :clerkUserId', { clerkUserId });
     }
 
     if (filter) {
-      query.where(queryBuilder.whereBuilder(JSON.parse(filter), 'account'));
+      query.andWhere(queryBuilder.whereBuilder(JSON.parse(filter), 'account'));
     }
 
     if (sort) {

@@ -16,6 +16,7 @@ import {
 import { CampaignsService } from './campaigns.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
+import { GetUser } from 'src/decorators/get-user.decorator';
 
 @Controller('campaigns')
 @UseInterceptors(ClassSerializerInterceptor)
@@ -33,8 +34,8 @@ export class CampaignsController {
   }
 
   @Get()
-  async findAll(@Query('clerkUserId') clerkUserId?: string) {
-    const campaigns = await this.campaignsService.findAll(clerkUserId);
+  async findAll(@GetUser() user: any) {
+    const campaigns = await this.campaignsService.findAll(user.id);
     return campaigns;
   }
 

@@ -11,7 +11,7 @@ import { Queue } from 'bullmq';
 import { CreateCampaignDto, CampaignStatus } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { Campaign } from 'src/entities/campaigns.entity';
-import { Account } from 'src/entities/accounts.entity';
+import { Account, AccountStatus } from 'src/entities/accounts.entity';
 import { EmailProvidersService } from 'src/providers/email-providers.service';
 import { EmailImportSession } from 'src/entities/email-import-sessions.entity';
 import { EmailRecipient } from 'src/entities/email-recipients.entity';
@@ -83,6 +83,11 @@ export class CampaignsService {
       accounts,
       totalRecipients: recipientCount,
     });
+
+    accounts.forEach((account) => {
+      account.status = AccountStatus.IN_USE;
+    });
+    await this.accountRepository.save(accounts);
 
     return this.campaignRepository.save(campaign);
   }

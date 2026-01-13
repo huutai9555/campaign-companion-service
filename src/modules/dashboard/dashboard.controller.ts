@@ -10,6 +10,7 @@ import {
   DashboardResponseDto,
   DashboardStatsDto,
 } from './dto/dashboard-response.dto';
+import { GetUser } from 'src/decorators/get-user.decorator';
 
 @Controller('dashboard')
 @UseInterceptors(ClassSerializerInterceptor)
@@ -17,10 +18,8 @@ export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @Get()
-  async getStats(
-    @Query('clerkUserId') clerkUserId?: string,
-  ): Promise<DashboardResponseDto> {
-    return this.dashboardService.getStats(clerkUserId);
+  async getStats(@GetUser() user: any): Promise<DashboardResponseDto> {
+    return this.dashboardService.getStats(user.id);
   }
 
   @Get('stats')

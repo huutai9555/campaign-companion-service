@@ -6,7 +6,7 @@ import { Logger } from '@nestjs/common';
 import { CAMPAIGN_EMAIL_SENDING } from 'src/constant/campaigns';
 import { Campaign } from 'src/entities/campaigns.entity';
 import { EmailRecipient } from 'src/entities/email-recipients.entity';
-import { Account } from 'src/entities/accounts.entity';
+import { Account, AccountStatus } from 'src/entities/accounts.entity';
 import { EmailProvidersService } from 'src/providers/email-providers.service';
 import { getProviderConfig } from 'src/helpers/email-provider-config';
 
@@ -70,6 +70,10 @@ export class CampaignEmailConsumer extends WorkerHost {
       campaign.status = 'completed';
       campaign.completedAt = new Date();
       await this.campaignRepository.save(campaign);
+
+      // Update all accounts status to active
+      await this.updateAccountsStatusToActive(campaign.accounts);
+
       return { status: 'completed', sent: 0 };
     }
 
@@ -90,7 +94,9 @@ export class CampaignEmailConsumer extends WorkerHost {
       pendingRecipients.length / campaign.accounts.length,
     );
 
+    // Chạy qua từng account để gửi email
     for (const account of campaign.accounts) {
+      // Lấy thông tin cấu hình nhà cung cấp
       const providerConfig = getProviderConfig(account.email);
       const now = new Date();
 
@@ -107,6 +113,10 @@ export class CampaignEmailConsumer extends WorkerHost {
         account.hourStartedAt = now;
         this.logger.log(`Reset hourly counter for account ${account.email}`);
       }
+
+      // Nếu 2 case this.shouldResetHourly(account) và this.shouldResetDaily(account)
+      // không xảy ra thì nó vẫn trong cùng 1 khoảng thời gian < 1h hoặc < 24h
+      // nên không cần reset lại lastResetDate và hourStartedAt
 
       // Initialize timestamps if not set
       if (!account.lastResetDate) {
@@ -168,6 +178,7 @@ export class CampaignEmailConsumer extends WorkerHost {
 
       for (let i = startIdx; i < endIdx && accountSentCount < maxCanSend; i++) {
         const recipient = pendingRecipients[i];
+        // Double check recipient is still pending
         if (!recipient || recipient.sendStatus !== 'pending') continue;
 
         try {
@@ -223,7 +234,6 @@ export class CampaignEmailConsumer extends WorkerHost {
           break;
         }
       }
-
       // Save account counters
       await this.accountRepository.save(account);
 
@@ -236,7 +246,7 @@ export class CampaignEmailConsumer extends WorkerHost {
       );
     }
 
-    // Update campaign statistics
+    // Update campaign statistics every batch via all accounts
     campaign.totalSent += totalSentCount;
     campaign.totalFailed += totalFailedCount;
 
@@ -252,6 +262,9 @@ export class CampaignEmailConsumer extends WorkerHost {
       campaign.status = 'completed';
       campaign.completedAt = new Date();
       this.logger.log(`Campaign ${campaignId} completed!`);
+
+      // Update all accounts status to active
+      await this.updateAccountsStatusToActive(campaign.accounts);
     } else if (needsReschedule) {
       // Schedule next job
       const delayMs = Math.max(rescheduleDelayMs, 60000); // At least 1 minute
@@ -298,21 +311,26 @@ export class CampaignEmailConsumer extends WorkerHost {
     };
   }
 
+  // Nên reset counters hàng ngày (24h) và hàng giờ (1h)
   private shouldResetDaily(account: Account): boolean {
+    // Nếu chưa từng reset thì cần reset
     if (!account.lastResetDate) return true;
     const now = new Date();
     const lastReset = new Date(account.lastResetDate);
     const hoursSinceReset =
       (now.getTime() - lastReset.getTime()) / (1000 * 60 * 60);
+    // Nếu đã hơn hoặc bằng 24h thì nên reset
     return hoursSinceReset >= 24;
   }
 
   private shouldResetHourly(account: Account): boolean {
+    // Nếu chưa từng reset thì cần reset
     if (!account.hourStartedAt) return true;
     const now = new Date();
     const hourStarted = new Date(account.hourStartedAt);
     const minutesSinceStart =
       (now.getTime() - hourStarted.getTime()) / (1000 * 60);
+    // Nếu đã hơn hoặc bằng 60 phút thì nên reset
     return minutesSinceStart >= 60;
   }
 
@@ -340,5 +358,15 @@ export class CampaignEmailConsumer extends WorkerHost {
 
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async updateAccountsStatusToActive(
+    accounts: Account[],
+  ): Promise<void> {
+    for (const account of accounts) {
+      account.status = AccountStatus.ACTIVE;
+      await this.accountRepository.save(account);
+      this.logger.log(`Account ${account.email} status updated to active`);
+    }
   }
 }

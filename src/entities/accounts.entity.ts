@@ -12,6 +12,7 @@ export enum AccountStatus {
   ACTIVE = 'active',
   PAUSED = 'paused',
   LIMIT_REACHED = 'limit_reached',
+  IN_USE = 'in_use',
 }
 
 // Type definitions cho credentials của từng provider
