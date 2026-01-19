@@ -47,8 +47,17 @@ export class Account extends BaseEntity {
     data: string;
   };
 
-  @Column({ name: 'daily_limit', type: 'int', default: 300 })
+  @Column({ name: 'daily_limit', type: 'int', default: 500 })
   dailyLimit: number;
+
+  @Column({ name: 'max_per_hour', type: 'int', default: 100 })
+  maxPerHour: number;
+
+  @Column({ name: 'delay_between_emails_from', type: 'int', default: 3000 }) // milliseconds
+  delayBetweenEmailsFrom: number;
+
+  @Column({ name: 'delay_between_emails_to', type: 'int', default: 5000 }) // milliseconds
+  delayBetweenEmailsTo: number;
 
   @Column({ name: 'sent_today', type: 'int', default: 0 })
   sentToday: number;

@@ -6,7 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
+import { Queue, Worker } from 'bullmq';
 
 import { CreateCampaignDto, CampaignStatus } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
@@ -17,9 +17,14 @@ import { EmailImportSession } from 'src/entities/email-import-sessions.entity';
 import { EmailRecipient } from 'src/entities/email-recipients.entity';
 import { EmailTemplate } from 'src/entities/email-templates.entity';
 import { CAMPAIGN_EMAIL_SENDING } from 'src/constant/campaigns';
+import { PaginateDto } from 'src/shared/dto/paginate.dto';
+import { QueryBuilder } from 'src/helpers/query-builder';
+import { Pagination } from 'nestjs-typeorm-paginate';
 
 @Injectable()
 export class CampaignsService {
+  private worker: Worker;
+
   constructor(
     @InjectRepository(Campaign)
     private readonly campaignRepository: Repository<Campaign>,
@@ -66,6 +71,20 @@ export class CampaignsService {
       );
     }
 
+    // Verify templates exist and belong to user
+    const templates = await this.emailTemplateRepository.find({
+      where: {
+        id: In(createCampaignDto.templateIds),
+        clerkUserId: user.id,
+      },
+    });
+
+    if (templates.length !== createCampaignDto.templateIds.length) {
+      throw new BadRequestException(
+        'One or more template IDs are invalid or do not belong to you',
+      );
+    }
+
     const recipientCount = await this.emailRecipient
       .createQueryBuilder('recipient')
       .where('recipient.import_session_id = :import_session_id', {
@@ -96,42 +115,20 @@ export class CampaignsService {
     emailImportSession.isUsed = true;
     await this.emailImportSession.save(emailImportSession);
 
+    // Link templates to campaign (ManyToMany)
+    campaign.templates = templates;
+
     const savedCampaign = await this.campaignRepository.save(campaign);
-
-    // Create templates from variants if provided
-    if (createCampaignDto.templates) {
-      const { subjectVariants, bodyVariants } = createCampaignDto.templates;
-
-      if (subjectVariants?.length > 0 && bodyVariants?.length > 0) {
-        const templates: EmailTemplate[] = [];
-
-        // Create templates by pairing variants (by index or create all combinations)
-        // Here we create templates by matching indices
-        const maxLength = Math.max(subjectVariants.length, bodyVariants.length);
-
-        for (let i = 0; i < maxLength; i++) {
-          const subjectVariant = subjectVariants[i % subjectVariants.length];
-          const bodyVariant = bodyVariants[i % bodyVariants.length];
-
-          const template = this.emailTemplateRepository.create({
-            campaignId: savedCampaign.id,
-            subject: subjectVariant.content,
-            content: bodyVariant.content,
-            versionNumber: i + 1,
-            isActive: i === 0, // First template is active
-          });
-          templates.push(template);
-        }
-
-        await this.emailTemplateRepository.save(templates);
-        savedCampaign.templates = templates;
-      }
-    }
 
     return savedCampaign;
   }
 
-  async findAll(clerkUserId?: string): Promise<Campaign[]> {
+  async findAll(
+    clerkUserId: string,
+    params: PaginateDto,
+  ): Promise<Campaign[] | Pagination<Campaign>> {
+    const { filter, size, sort, page } = params;
+    const queryBuilder = new QueryBuilder();
     const query = this.campaignRepository
       .createQueryBuilder('campaign')
       .loadRelationCountAndMap('campaign.accountsCount', 'campaign.accounts')
@@ -143,7 +140,40 @@ export class CampaignsService {
       query.where('campaign.clerkUserId = :clerkUserId', { clerkUserId });
     }
 
-    return query.orderBy('campaign.createdAt', 'DESC').getMany();
+    if (filter) {
+      query.andWhere(queryBuilder.whereBuilder(JSON.parse(filter), 'campaign'));
+    }
+
+    if (sort) {
+      queryBuilder.buildOrderBy(query, JSON.parse(sort), 'campaign');
+    }
+
+    if (size) {
+      // Use countQueries: false to prevent wrong count due to leftJoin multiplying rows
+      // Then manually count distinct campaigns
+      const totalItems = await this.campaignRepository
+        .createQueryBuilder('campaign')
+        .where('campaign.clerkUserId = :clerkUserId', { clerkUserId })
+        .getCount();
+
+      const items = await query
+        .skip((page - 1) * size)
+        .take(size)
+        .getMany();
+
+      return {
+        items,
+        meta: {
+          totalItems,
+          itemCount: items.length,
+          itemsPerPage: size,
+          totalPages: Math.ceil(totalItems / size),
+          currentPage: page,
+        },
+      };
+    }
+
+    return await query.getMany();
   }
 
   async getQueueReport(clerkUserId?: string): Promise<{
@@ -262,37 +292,22 @@ export class CampaignsService {
       campaign.accounts = accounts;
     }
 
-    // Handle templates update/create
-    if (updateCampaignDto.templates) {
-      const { subjectVariants, bodyVariants } = updateCampaignDto.templates;
+    // Handle templates update (ManyToMany - just replace the relation)
+    if (updateCampaignDto.templateIds) {
+      const newTemplates = await this.emailTemplateRepository.find({
+        where: {
+          id: In(updateCampaignDto.templateIds),
+          clerkUserId: campaign.clerkUserId,
+        },
+      });
 
-      if (subjectVariants?.length > 0 && bodyVariants?.length > 0) {
-        // Delete existing templates
-        if (campaign.templates?.length > 0) {
-          await this.emailTemplateRepository.remove(campaign.templates);
-        }
-
-        // Create new templates from variants
-        const templates: EmailTemplate[] = [];
-        const maxLength = Math.max(subjectVariants.length, bodyVariants.length);
-
-        for (let i = 0; i < maxLength; i++) {
-          const subjectVariant = subjectVariants[i % subjectVariants.length];
-          const bodyVariant = bodyVariants[i % bodyVariants.length];
-
-          const template = this.emailTemplateRepository.create({
-            campaignId: campaign.id,
-            subject: subjectVariant.content,
-            content: bodyVariant.content,
-            versionNumber: i + 1,
-            isActive: i === 0,
-          });
-          templates.push(template);
-        }
-
-        await this.emailTemplateRepository.save(templates);
-        campaign.templates = templates;
+      if (newTemplates.length !== updateCampaignDto.templateIds.length) {
+        throw new BadRequestException(
+          'One or more template IDs are invalid or do not belong to you',
+        );
       }
+
+      campaign.templates = newTemplates;
     }
 
     return this.campaignRepository.save(campaign);
@@ -301,13 +316,19 @@ export class CampaignsService {
   async remove(id: string): Promise<void> {
     const campaign = await this.findOne(id);
 
-    // Remove repeatable job if exists
+    // Remove any pending/delayed jobs for this campaign
     try {
-      await this.campaignEmailQueue.removeRepeatableByKey(
-        `${CAMPAIGN_EMAIL_SENDING}:campaign-${id}:::0 1 * * *`,
-      );
+      const delayedJobs = await this.campaignEmailQueue.getDelayed();
+      const waitingJobs = await this.campaignEmailQueue.getWaiting();
+
+      const allJobs = [...delayedJobs, ...waitingJobs];
+      for (const job of allJobs) {
+        if (job.data?.campaignId === id) {
+          await job.remove();
+        }
+      }
     } catch (error) {
-      // Job might not exist, ignore error
+      // Jobs might not exist, ignore error
     }
 
     await this.campaignRepository.remove(campaign);
@@ -333,21 +354,9 @@ export class CampaignsService {
       `${CAMPAIGN_EMAIL_SENDING}-immediate`,
       { campaignId: id },
       {
-        jobId: `campaign-${id}-immediate-${Date.now()}`,
+        jobId: `campaign-${id}-immediate-${campaign.startedAt}`,
       },
     );
-
-    // Schedule repeatable job to run daily at 01:00 UTC (08:00 Vietnam time)
-    // await this.campaignEmailQueue.add(
-    //   CAMPAIGN_EMAIL_SENDING,
-    //   { campaignId: id },
-    //   {
-    //     repeat: {
-    //       pattern: '0 1 * * *', // Cron: every day at 01:00 UTC
-    //     },
-    //     jobId: `campaign-${id}`, // Unique job ID to prevent duplicates
-    //   },
-    // );
 
     return this.campaignRepository.save(campaign);
   }
@@ -361,10 +370,18 @@ export class CampaignsService {
 
     campaign.status = CampaignStatus.PAUSED;
 
-    // Remove repeatable job
-    await this.campaignEmailQueue.removeRepeatableByKey(
-      `${CAMPAIGN_EMAIL_SENDING}:campaign-${id}:::0 1 * * *`,
-    );
+    try {
+      const delayedJobs = await this.campaignEmailQueue.getDelayed();
+      const waitingJobs = await this.campaignEmailQueue.getWaiting();
+      const allJobs = [...delayedJobs, ...waitingJobs];
+      for (const job of allJobs) {
+        if (job.data?.campaignId === id) {
+          await job.remove();
+        }
+      }
+    } catch (error) {
+      // Jobs might not exist, ignore error
+    }
 
     return this.campaignRepository.save(campaign);
   }
@@ -377,25 +394,14 @@ export class CampaignsService {
     }
 
     campaign.status = CampaignStatus.RUNNING;
+    campaign.startedAt = new Date();
 
     // Add immediate job to run right away
     await this.campaignEmailQueue.add(
       `${CAMPAIGN_EMAIL_SENDING}-immediate`,
       { campaignId: id },
       {
-        jobId: `campaign-${id}-immediate-${Date.now()}`,
-      },
-    );
-
-    // Re-schedule repeatable job
-    await this.campaignEmailQueue.add(
-      CAMPAIGN_EMAIL_SENDING,
-      { campaignId: id },
-      {
-        repeat: {
-          pattern: '0 1 * * *', // Cron: every day at 01:00 UTC
-        },
-        jobId: `campaign-${id}`, // Unique job ID to prevent duplicates
+        jobId: `campaign-${id}-immediate-${campaign.startedAt}`,
       },
     );
 
@@ -403,10 +409,40 @@ export class CampaignsService {
   }
 
   async complete(id: string): Promise<Campaign> {
-    const campaign = await this.findOne(id);
+    const campaign = await this.campaignRepository
+      .createQueryBuilder('campaign')
+      .leftJoinAndSelect('campaign.accounts', 'accounts')
+      .where('campaign.id = :id', { id })
+      .getOne();
+    if (!campaign) {
+      throw new NotFoundException(`Campaign with ID ${id} not found`);
+    }
+    campaign.accounts.forEach((account) => {
+      account.status = AccountStatus.ACTIVE;
+    });
+
+    // Remove any pending/delayed jobs for this campaign
+    try {
+      const delayedJobs = await this.campaignEmailQueue.getDelayed();
+      const waitingJobs = await this.campaignEmailQueue.getWaiting();
+      const currentJob = await this.campaignEmailQueue.getJob(
+        `campaign-${campaign.id}-immediate-${campaign.startedAt}`,
+      );
+      await currentJob.remove();
+
+      const allJobs = [...delayedJobs, ...waitingJobs];
+      for (const job of allJobs) {
+        if (job.data?.campaignId === id) {
+          await job.remove();
+        }
+      }
+    } catch (error) {
+      // Jobs might not exist, ignore error
+    }
 
     campaign.status = CampaignStatus.COMPLETED;
     campaign.completedAt = new Date();
+    await this.accountRepository.save(campaign.accounts);
 
     return this.campaignRepository.save(campaign);
   }
@@ -422,11 +458,8 @@ export class CampaignsService {
       throw new BadRequestException('Campaign has no email templates');
     }
 
-    // Get active template
-    const activeTemplate = campaign.templates.find((t) => t.isActive);
-    if (!activeTemplate) {
-      throw new BadRequestException('Campaign has no active email template');
-    }
+    // Use first template
+    const template = campaign.templates[0];
 
     // Use first available account
     const account = campaign.accounts[0];
@@ -434,8 +467,8 @@ export class CampaignsService {
     // Send email using EmailProvidersService
     const result = await this.emailProvidersService.sendEmail(account, {
       to: testEmail,
-      subject: activeTemplate.subject,
-      htmlContent: activeTemplate.content,
+      subject: template.subject,
+      htmlContent: template.content,
     });
 
     return result;

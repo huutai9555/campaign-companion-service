@@ -6,10 +6,7 @@ import {
   IsOptional,
   IsDateString,
   ArrayMinSize,
-  ValidateNested,
-  IsObject,
 } from 'class-validator';
-import { Type } from 'class-transformer';
 
 export enum SendType {
   IMMEDIATE = 'immediate',
@@ -25,27 +22,6 @@ export enum CampaignStatus {
   FAILED = 'failed',
 }
 
-// Template variant classes
-export class TemplateVariantDto {
-  @IsString()
-  id: string;
-
-  @IsString()
-  content: string;
-}
-
-export class CampaignTemplatesDto {
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => TemplateVariantDto)
-  subjectVariants: TemplateVariantDto[];
-
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => TemplateVariantDto)
-  bodyVariants: TemplateVariantDto[];
-}
-
 export class CreateCampaignDto {
   @IsString()
   @IsNotEmpty()
@@ -59,6 +35,11 @@ export class CreateCampaignDto {
   @IsString()
   emailImportSessionId: string;
 
+  @IsArray()
+  @ArrayMinSize(0)
+  @IsString({ each: true })
+  templateIds: string[]; // Array of existing template IDs to link
+
   @IsEnum(SendType)
   @IsNotEmpty()
   sendType: SendType;
@@ -66,11 +47,4 @@ export class CreateCampaignDto {
   @IsDateString()
   @IsOptional()
   scheduledAt?: string;
-
-  // Templates with subject and body variants
-  @IsOptional()
-  @IsObject()
-  @ValidateNested()
-  @Type(() => CampaignTemplatesDto)
-  templates?: CampaignTemplatesDto;
 }

@@ -12,6 +12,7 @@ import { RedisModule } from './modules/redis/redis.module';
 import { BullModule } from '@nestjs/bullmq';
 import { EmailImportSessionsModule } from './modules/email-import-sessions/email-import-sessions.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { EmailTemplatesModule } from './modules/email-templates/email-templates.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     AuthModule,
     EmailImportSessionsModule,
     DashboardModule,
+    EmailTemplatesModule,
   ],
   providers: [
     ClerkClientProvider,

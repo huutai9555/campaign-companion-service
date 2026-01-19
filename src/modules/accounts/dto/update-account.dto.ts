@@ -11,4 +11,20 @@ export class UpdateAccountDto extends PartialType(CreateAccountDto) {
 
   @IsNotEmpty()
   credentials: EmailCredentials;
+
+  @IsInt()
+  @IsOptional()
+  dailyLimit: number;
+
+  @IsInt()
+  @IsOptional()
+  maxPerHour: number;
+
+  @IsInt()
+  @IsOptional()
+  delayBetweenEmailsFrom?: number;
+
+  @IsInt()
+  @IsOptional()
+  delayBetweenEmailsTo?: number;
 }

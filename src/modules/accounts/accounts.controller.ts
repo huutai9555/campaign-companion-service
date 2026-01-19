@@ -35,7 +35,6 @@ export class AccountsController {
 
   @Get()
   async findAll(@Query() params: PaginateDto, @GetUser() user: any) {
-    console.log('params: ', params);
     const accounts = await this.accountsService.findAll(user.id, params);
     return accounts;
   }
@@ -55,7 +54,6 @@ export class AccountsController {
 
   @Get(':id')
   async findOne(@Param('id') id: string, @GetUser() user: any) {
-    console.log('id: ', id);
     const account = await this.accountsService.findOne(id, user);
     return account;
   }

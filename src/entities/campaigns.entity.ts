@@ -3,7 +3,6 @@
 import {
   Entity,
   Column,
-  OneToMany,
   ManyToMany,
   ManyToOne,
   JoinTable,
@@ -42,8 +41,13 @@ export class Campaign extends BaseEntity {
   @JoinColumn({ name: 'email_import_session_id' })
   emailImportSession: EmailImportSession;
 
-  // === NỘI DUNG EMAIL ===
-  @OneToMany(() => EmailTemplate, (template) => template.campaign)
+  // === NỘI DUNG EMAIL - ManyToMany (1 campaign có nhiều templates, 1 template có thể dùng cho nhiều campaigns) ===
+  @ManyToMany(() => EmailTemplate, (template) => template.campaigns)
+  @JoinTable({
+    name: 'campaign_email_templates',
+    joinColumn: { name: 'campaign_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'email_template_id', referencedColumnName: 'id' },
+  })
   templates: EmailTemplate[];
 
   // === LỊCH GỬI ===

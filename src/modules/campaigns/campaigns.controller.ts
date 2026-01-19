@@ -17,6 +17,7 @@ import { CampaignsService } from './campaigns.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { GetUser } from 'src/decorators/get-user.decorator';
+import { PaginateDto } from 'src/shared/dto/paginate.dto';
 
 @Controller('campaigns')
 @UseInterceptors(ClassSerializerInterceptor)
@@ -34,8 +35,8 @@ export class CampaignsController {
   }
 
   @Get()
-  async findAll(@GetUser() user: any) {
-    const campaigns = await this.campaignsService.findAll(user.id);
+  async findAll(@GetUser() user: any, @Query() params: PaginateDto) {
+    const campaigns = await this.campaignsService.findAll(user.id, params);
     return campaigns;
   }
 

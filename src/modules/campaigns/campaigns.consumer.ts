@@ -6,13 +6,19 @@ import { Logger } from '@nestjs/common';
 import { CAMPAIGN_EMAIL_SENDING } from 'src/constant/campaigns';
 import { Campaign } from 'src/entities/campaigns.entity';
 import { EmailRecipient } from 'src/entities/email-recipients.entity';
-import { Account, AccountStatus } from 'src/entities/accounts.entity';
+import {
+  Account,
+  AccountStatus,
+  SmtpCredentials,
+} from 'src/entities/accounts.entity';
 import { EmailProvidersService } from 'src/providers/email-providers.service';
-import { getProviderConfig } from 'src/helpers/email-provider-config';
+import * as nodemailer from 'nodemailer';
+import { ConfigService } from '@nestjs/config';
 
 @Processor(CAMPAIGN_EMAIL_SENDING)
 export class CampaignEmailConsumer extends WorkerHost {
   private readonly logger = new Logger(CampaignEmailConsumer.name);
+  private readonly encryptionKey: string;
 
   constructor(
     @InjectRepository(Campaign)
@@ -24,11 +30,19 @@ export class CampaignEmailConsumer extends WorkerHost {
     private readonly emailProvidersService: EmailProvidersService,
     @InjectQueue(CAMPAIGN_EMAIL_SENDING)
     private readonly campaignEmailQueue: Queue,
+    private readonly configService: ConfigService,
   ) {
     super();
+    this.encryptionKey =
+      this.configService.get<string>('ENCRYPTION_KEY') ||
+      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
   }
 
-  async process(job: Job<{ campaignId: string }, any, string>): Promise<any> {
+  async process(
+    job: Job<{ campaignId: string }, any, string>,
+    token?: string,
+  ): Promise<any> {
+    this.logger.log(`Processing job with token: ${token}`);
     const { campaignId } = job.data;
     this.logger.log(`Processing campaign ${campaignId}`);
 
@@ -101,9 +115,19 @@ export class CampaignEmailConsumer extends WorkerHost {
 
     // Chạy qua từng account để gửi email
     for (const account of campaign.accounts) {
-      // Lấy thông tin cấu hình nhà cung cấp
-      const providerConfig = getProviderConfig(account.email);
       const now = new Date();
+      const credentials = account.getTypedCredentials(
+        this.encryptionKey,
+      ) as SmtpCredentials;
+      const transporter = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 587,
+        secure: false,
+        auth: {
+          user: credentials.user,
+          pass: credentials.password,
+        },
+      });
 
       // Reset daily counter if needed (24h passed since lastResetDate)
       if (this.shouldResetDaily(account)) {
@@ -132,10 +156,10 @@ export class CampaignEmailConsumer extends WorkerHost {
       }
 
       // Check daily limit
-      if (account.sentToday >= providerConfig.dailyLimit) {
+      if (account.sentToday >= account.dailyLimit) {
         const msUntilNextDay = this.getMsUntilNextDay(account.lastResetDate);
         this.logger.log(
-          `Account ${account.email} reached daily limit (${account.sentToday}/${providerConfig.dailyLimit}). ` +
+          `Account ${account.email} reached daily limit (${account.sentToday}/${account.dailyLimit}). ` +
             `Will resume in ${Math.ceil(msUntilNextDay / 1000 / 60)} minutes`,
         );
         needsReschedule = true;
@@ -146,10 +170,10 @@ export class CampaignEmailConsumer extends WorkerHost {
       }
 
       // Check hourly limit
-      if (account.sentThisHour >= providerConfig.maxPerHour) {
+      if (account.sentThisHour >= account.maxPerHour) {
         const msUntilNextHour = this.getMsUntilNextHour(account.hourStartedAt);
         this.logger.log(
-          `Account ${account.email} reached hourly limit (${account.sentThisHour}/${providerConfig.maxPerHour}). ` +
+          `Account ${account.email} reached hourly limit (${account.sentThisHour}/${account.maxPerHour}). ` +
             `Will resume in ${Math.ceil(msUntilNextHour / 1000 / 60)} minutes`,
         );
         needsReschedule = true;
@@ -160,14 +184,14 @@ export class CampaignEmailConsumer extends WorkerHost {
       }
 
       // Calculate how many emails this account can send this batch
-      const remainingDaily = providerConfig.dailyLimit - account.sentToday;
-      const remainingHourly = providerConfig.maxPerHour - account.sentThisHour;
+      const remainingDaily = account.dailyLimit - account.sentToday;
+      const remainingHourly = account.maxPerHour - account.sentThisHour;
       const maxCanSend = Math.min(remainingDaily, remainingHourly);
 
       this.logger.log(
         `Account ${account.email}: can send ${maxCanSend} emails ` +
-          `(daily: ${account.sentToday}/${providerConfig.dailyLimit}, ` +
-          `hourly: ${account.sentThisHour}/${providerConfig.maxPerHour})`,
+          `(daily: ${account.sentToday}/${account.dailyLimit}, ` +
+          `hourly: ${account.sentThisHour}/${account.maxPerHour})`,
       );
 
       // Send emails for this account
@@ -182,19 +206,40 @@ export class CampaignEmailConsumer extends WorkerHost {
       );
 
       for (let i = startIdx; i < endIdx && accountSentCount < maxCanSend; i++) {
+        const campaignStatus = await this.campaignRepository.findOne({
+          where: { id: campaign.id },
+        });
+        if (
+          campaignStatus.status === 'paused' ||
+          campaignStatus.status === 'completed'
+        ) {
+          this.logger.log(
+            `Campaign ${campaign.id} status changed to ${campaignStatus.status}, stopping sends for campaign.`,
+          );
+          return;
+        }
+
         const recipient = pendingRecipients[i];
         // Double check recipient is still pending
         if (!recipient || recipient.sendStatus !== 'pending') continue;
 
         try {
-          await this.emailProvidersService.sendViaSmtp(account, {
+          // Send email
+          const randomIndex = Math.floor(
+            Math.random() * campaign.templates.length,
+          );
+          await transporter.sendMail({
+            from: `"${account.name}" <${account.email}>`,
             to: recipient.email,
-            subject: campaign.templates[0].subject,
-            htmlContent: this.replaceVariables(
+            subject: this.replaceVariables(
+              campaign.templates[randomIndex].subject,
+              recipient,
+            ),
+            html: this.replaceVariables(
               `<!DOCTYPE html>
           <html>
           <head>
-              <title>Thông tin Liên hệ</title>
+              <title>${campaign.templates[randomIndex].subject}</title>
               <style>
                   body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
                   .container { max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
@@ -206,32 +251,9 @@ export class CampaignEmailConsumer extends WorkerHost {
           </head>
           <body>
               <div class="container">
-                  <h2>Chi tiết Thông tin Khách hàng</h2>
-
-                  <div class="data-item">
-                      <span class="label">Tên:</span>
-                      <span class="value">
-                         ${recipient.name || 'Khách hàng tiềm năng'}
-                      </span>
-                  </div>
-
-                  <div class="data-item">
-                      <span class="label">Loại hình:</span>
-                      <span class="value">
-                         ${recipient.category || 'Chưa xác định'}
-                      </span>
-                  </div>
-
-                  <div class="data-item">
-                      <span class="label">Địa chỉ:</span>
-                      <span class="value">
-                         ${recipient.address || 'Không có địa chỉ'}
-                      </span>
-                  </div>
                     <div class="data-item">
-                      <span class="label">Ghi chú:</span>
                       <span class="value">
-                         ${campaign.templates[0].content || 'Cảm ơn vì đã quan tâm đến dịch vụ của chúng tôi.'}
+                         ${campaign.templates[randomIndex].content || 'Cảm ơn vì đã quan tâm đến dịch vụ của chúng tôi.'}
                       </span>
                   </div>
               </div>
@@ -246,32 +268,67 @@ export class CampaignEmailConsumer extends WorkerHost {
           recipient.sentAt = new Date();
           await this.emailRecipientRepository.save(recipient);
 
-          // Update account counters
+          // Update account counters and save immediately
           account.sentToday++;
           account.sentThisHour++;
+          await this.accountRepository.save(account);
+
+          // Update campaign stats and save immediately
+          campaign.totalSent++;
+          await this.campaignRepository.save(campaign);
+
           accountSentCount++;
+          totalSentCount++;
 
           this.logger.log(
-            `Sent email to ${recipient.email} via ${account.email}`,
+            `Sent email to ${recipient.email} via ${account.email} | Campaign: ${campaign.totalSent}/${campaign.totalRecipients}`,
           );
 
-          // Delay between emails
-          if (providerConfig.delayBetweenEmails > 0) {
-            await this.delay(providerConfig.delayBetweenEmails);
+          // Delay between emails (random between from and to)
+          if (account.delayBetweenEmailsFrom > 0) {
+            const randomDelay =
+              Math.floor(
+                Math.random() *
+                  (account.delayBetweenEmailsTo -
+                    account.delayBetweenEmailsFrom +
+                    1),
+              ) + account.delayBetweenEmailsFrom;
+            await this.delay(randomDelay);
           }
         } catch (error) {
           this.logger.error(
             `Failed to send email to ${recipient.email}: ${error.message}`,
           );
+
+          // Update recipient status
           recipient.sendStatus = 'failed';
           recipient.errorMessage = error.message;
           recipient.retryCount += 1;
           await this.emailRecipientRepository.save(recipient);
+
+          // Update account - save immediately
+          await this.accountRepository.save(account);
+
+          // Update campaign stats and save immediately
+          campaign.totalFailed++;
+          await this.campaignRepository.save(campaign);
+
           accountFailedCount++;
+          totalFailedCount++;
+
+          // Khi gửi fail, dừng 1 tiếng rồi mới gửi lại
+          const oneHourMs = 60 * 60 * 1000; // 1 hour in milliseconds
+          this.logger.log(
+            `Send failed for ${recipient.email}. Pausing account ${account.email} for 1 hour before retrying.`,
+          );
+          needsReschedule = true;
+          rescheduleDelayMs = Math.max(rescheduleDelayMs, oneHourMs);
+          rescheduleReason = rescheduleReason || 'send_failed';
+          break; // Stop processing this account and reschedule
         }
 
         // Check if we hit hourly limit during sending
-        if (account.sentThisHour >= providerConfig.maxPerHour) {
+        if (account.sentThisHour >= account.maxPerHour) {
           const msUntilNextHour = this.getMsUntilNextHour(
             account.hourStartedAt,
           );
@@ -284,21 +341,12 @@ export class CampaignEmailConsumer extends WorkerHost {
           break;
         }
       }
-      // Save account counters
-      await this.accountRepository.save(account);
-
-      totalSentCount += accountSentCount;
-      totalFailedCount += accountFailedCount;
       recipientIndex = endIdx;
 
       this.logger.log(
         `Account ${account.email}: sent ${accountSentCount}, failed ${accountFailedCount}`,
       );
     }
-
-    // Update campaign statistics every batch via all accounts
-    campaign.totalSent += totalSentCount;
-    campaign.totalFailed += totalFailedCount;
 
     // Check remaining recipients
     const remainingPending = await this.emailRecipientRepository.count({
@@ -311,6 +359,7 @@ export class CampaignEmailConsumer extends WorkerHost {
     if (remainingPending === 0) {
       campaign.status = 'completed';
       campaign.completedAt = new Date();
+      await this.campaignRepository.save(campaign);
       this.logger.log(`Campaign ${campaignId} completed!`);
 
       // Update all accounts status to active
@@ -345,8 +394,6 @@ export class CampaignEmailConsumer extends WorkerHost {
         },
       );
     }
-
-    await this.campaignRepository.save(campaign);
 
     this.logger.log(
       `Campaign ${campaignId}: sent ${totalSentCount}, failed ${totalFailedCount}, remaining ${remainingPending}`,

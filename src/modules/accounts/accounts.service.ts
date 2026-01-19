@@ -126,6 +126,14 @@ export class AccountsService {
     if (updateAccountDto.isActive !== undefined)
       account.isActive = updateAccountDto.isActive;
     if (updateAccountDto.status) account.status = updateAccountDto.status;
+    if (updateAccountDto.dailyLimit)
+      account.dailyLimit = updateAccountDto.dailyLimit;
+    if (updateAccountDto.maxPerHour)
+      account.maxPerHour = updateAccountDto.maxPerHour;
+    if (updateAccountDto.delayBetweenEmailsFrom)
+      account.delayBetweenEmailsFrom = updateAccountDto.delayBetweenEmailsFrom;
+    if (updateAccountDto.delayBetweenEmailsTo)
+      account.delayBetweenEmailsTo = updateAccountDto.delayBetweenEmailsTo;
 
     // Update credentials if provided
     if (updateAccountDto.credentials) {
@@ -212,30 +220,5 @@ export class AccountsService {
     }
 
     return account.getTypedCredentials(this.encryptionKey);
-  }
-
-  async setData(key: string) {
-    this.redisClient.set(key, 'valuetest');
-    return {
-      message: 'Data set successfully',
-      key,
-    };
-  }
-
-  async getData(key: string) {
-    try {
-      const data = await this.redisClient.get(key);
-
-      console.log(`[Redis] Get key="${key}" value=`, data);
-
-      return {
-        key,
-        value: data,
-        found: data !== null && data !== undefined,
-      };
-    } catch (error) {
-      console.error('[Redis] Error getting data:', error);
-      throw error;
-    }
   }
 }
